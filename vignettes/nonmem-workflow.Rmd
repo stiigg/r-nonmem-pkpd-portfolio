@@ -1,0 +1,184 @@
+---
+title: "NONMEM Workflow: SDTM to NONMEM Dataset Preparation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{NONMEM Workflow: SDTM to NONMEM Dataset Preparation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Introduction
+
+This vignette demonstrates a complete workflow for converting CDISC SDTM pharmacokinetic data into NONMEM-ready datasets. The workflow covers:
+
+1. Loading SDTM source data (PC, EX, DM domains)
+2. Converting to NONMEM format
+3. Quality control validation
+4. PK parameter calculation
+5. Exporting for NONMEM analysis
+
+## Setup
+
+```{r setup}
+library(nonmemtools)
+library(dplyr)
+```
+
+## Step 1: Load SDTM Data
+
+In a real project, you would load SDTM datasets from XPT files or CSV:
+
+```{r load-data, eval=FALSE}
+# Example: Loading from CSV files
+pc_data <- read.csv("data-raw/sdtm_pc.csv")
+ex_data <- read.csv("data-raw/sdtm_ex.csv")
+dm_data <- read.csv("data-raw/sdtm_dm.csv")
+```
+
+For this tutorial, we'll create minimal example data:
+
+```{r example-data}
+# Plasma Concentration (PC) domain
+pc_data <- data.frame(
+  USUBJID = rep(c("STUDY001-001", "STUDY001-002"), each = 5),
+  PCDTC = c(
+    "2025-01-01T08:00", "2025-01-01T09:00", "2025-01-01T10:00",
+    "2025-01-01T12:00", "2025-01-01T16:00",
+    "2025-01-02T08:00", "2025-01-02T09:00", "2025-01-02T10:00",
+    "2025-01-02T12:00", "2025-01-02T16:00"
+  ),
+  PCSTRESN = c(0, 15.2, 22.8, 18.5, 10.2, 0, 12.5, 19.3, 16.8, 8.9),
+  PCTPTNUM = rep(c(0, 1, 2, 4, 8), 2)
+)
+
+# Exposure (EX) domain - dosing records
+ex_data <- data.frame(
+  USUBJID = c("STUDY001-001", "STUDY001-002"),
+  EXSTDTC = c("2025-01-01T08:00", "2025-01-02T08:00"),
+  EXDOSE = c(100, 100)
+)
+
+# Demographics (DM) domain
+dm_data <- data.frame(
+  USUBJID = c("STUDY001-001", "STUDY001-002"),
+  AGE = c(45, 52),
+  SEX = c("M", "F"),
+  WEIGHT = c(75, 68),
+  HEIGHT = c(178, 165)
+)
+```
+
+## Step 2: Convert to NONMEM Format
+
+```{r convert}
+nonmem_data <- create_nonmem_dataset(
+  pc_data = pc_data,
+  ex_data = ex_data,
+  dm_data = dm_data,
+  study_id = "STUDY001"
+)
+
+# Preview the dataset
+head(nonmem_data, 10)
+```
+
+### Understanding NONMEM Variables
+
+- **ID**: Numeric subject identifier
+- **TIME**: Time since first dose (hours)
+- **AMT**: Dose amount (for EVID=1 records)
+- **DV**: Dependent variable (concentration)
+- **EVID**: Event ID (0=observation, 1=dose)
+- **CMT**: Compartment (1=dosing, 2=observation)
+- **MDV**: Missing DV indicator (1=missing, 0=present)
+- **Covariates**: AGE, SEXN, WEIGHT, HEIGHT
+
+## Step 3: Quality Control Validation
+
+```{r validation}
+# Run comprehensive QC checks
+validation_results <- validate_nonmem_data(nonmem_data)
+
+# Print validation report
+print_validation_report(validation_results)
+```
+
+### What Gets Validated?
+
+1. ✅ Required variables present
+2. ✅ Correct data types
+3. ✅ Non-negative TIME values
+4. ✅ Valid EVID codes
+5. ✅ Dosing records have AMT > 0
+6. ✅ MDV consistency with missing DV
+7. ✅ Time ordering within subjects
+8. ✅ At least one dose per subject
+
+## Step 4: Calculate PK Parameters
+
+```{r pk-params}
+# Summarize PK parameters by subject
+pk_summary <- summarize_pk_by_subject(nonmem_data)
+
+print(pk_summary)
+```
+
+## Step 5: Export for NONMEM
+
+```{r export, eval=FALSE}
+# Write NONMEM-ready CSV
+write_nonmem_data(
+  data = nonmem_data,
+  file = "output/study001_pk.csv"
+)
+```
+
+## Advanced: Handling Multiple Dosing
+
+For multiple dose studies, you'll need to handle:
+
+- **II** (interdose interval): Time between doses
+- **ADDL** (additional doses): Number of additional doses after first
+- **SS** (steady state): Indicator for steady-state dosing
+
+```{r multiple-dose, eval=FALSE}
+# Example with BID dosing for 7 days
+ex_data_multiple <- data.frame(
+  USUBJID = "STUDY001-001",
+  EXSTDTC = "2025-01-01T08:00",
+  EXDOSE = 100,
+  EXDOSFRQ = "BID",  # Twice daily
+  EXDUR = "7"         # 7 days
+)
+
+# In NONMEM format, this becomes:
+# ID  TIME  AMT  EVID  II  ADDL
+#  1   0    100   1    12   13   (12h interval, 13 additional doses)
+```
+
+## Tips for Production Use
+
+1. **Always validate** SDTM data before conversion
+2. **Document** any data transformations or imputations
+3. **Version control** your datasets and code
+4. **QC independently** - have another programmer review
+5. **Save metadata** alongside datasets (study info, versions, dates)
+
+## Next Steps
+
+- See `vignette("pk-analysis")` for PK parameter interpretation
+- Check `?create_nonmem_dataset` for advanced options
+- Review NONMEM User Guide for modeling workflows
+
+## References
+
+- CDISC SDTM Implementation Guide
+- NONMEM User Guides (NM-TRAN, PREDPP)
+- FDA Study Data Technical Conformance Guide
