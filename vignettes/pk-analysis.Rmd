@@ -1,0 +1,275 @@
+---
+title: "Pharmacokinetic Parameter Analysis"
+author: "Christian Baghai"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Pharmacokinetic Parameter Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+
+library(nonmemtools)
+library(dplyr)
+library(ggplot2)
+```
+
+## Introduction
+
+This vignette demonstrates how to calculate and interpret pharmacokinetic (PK) parameters from concentration-time data using the `nonmemtools` package. We'll cover:
+
+- Basic PK parameter calculations (Cmax, Tmax, AUC, t½)
+- Population-level PK summaries
+- Visualization of concentration-time profiles
+- Interpretation of PK parameters in drug development context
+
+## Background: Key PK Parameters
+
+### Exposure Parameters
+
+- **Cmax**: Maximum observed concentration - indicates peak drug exposure
+- **Tmax**: Time to reach Cmax - reflects absorption rate
+- **AUC**: Area under concentration-time curve - represents total drug exposure
+- **AUC₀₋∞**: AUC extrapolated to infinity - accounts for terminal elimination
+
+### Disposition Parameters
+
+- **t½**: Terminal elimination half-life - time for concentration to decrease by 50%
+- **λz**: Elimination rate constant - derived from terminal slope
+- **CL**: Clearance - rate of drug removal from body
+- **Vd**: Volume of distribution - apparent distribution space
+
+## Example Data
+
+We'll use synthetic single-dose PK data for 25 subjects receiving 100 mg IV bolus:
+
+```{r load-data}
+# Load example NONMEM dataset
+# In practice, this would come from create_nonmem_dataset()
+example_data <- data.frame(
+  ID = rep(1:5, each = 8),
+  TIME = rep(c(0, 0.5, 1, 2, 4, 8, 12, 24), 5),
+  DV = c(
+    # Subject 1
+    NA, 18.2, 22.5, 19.3, 13.8, 7.2, 3.1, 0.8,
+    # Subject 2  
+    NA, 16.8, 21.2, 18.1, 12.5, 6.5, 2.8, 0.7,
+    # Subject 3
+    NA, 19.5, 24.1, 20.8, 15.2, 8.1, 3.6, 0.9,
+    # Subject 4
+    NA, 17.3, 20.8, 17.9, 13.1, 6.9, 3.0, 0.75,
+    # Subject 5
+    NA, 18.9, 23.2, 19.7, 14.5, 7.6, 3.3, 0.85
+  ),
+  EVID = rep(c(1, rep(0, 7)), 5),
+  AMT = rep(c(100, rep(0, 7)), 5)
+)
+
+head(example_data, 10)
+```
+
+## Individual PK Parameter Calculation
+
+### Single Subject Analysis
+
+Let's calculate PK parameters for Subject 1:
+
+```{r individual-pk}
+# Filter observation records for Subject 1
+subj1 <- example_data %>%
+  filter(ID == 1, EVID == 0, !is.na(DV))
+
+# Calculate PK parameters
+pk_params <- calculate_pk_parameters(
+  time = subj1$TIME,
+  conc = subj1$DV,
+  dose = 100
+)
+
+print(pk_params)
+```
+
+### Interpretation
+
+- **Cmax = `r round(pk_params$Cmax, 1)` ng/mL**: Peak concentration reached after IV bolus
+- **Tmax = `r pk_params$Tmax` hours**: Occurs immediately post-dose (expected for IV)
+- **AUC₀₋₂₄ = `r round(pk_params$AUC_last, 1)` ng·h/mL**: Total exposure over 24 hours
+- **t½ = `r round(pk_params$t_half, 1)` hours**: Drug eliminated with this half-life
+
+## Population-Level Analysis
+
+### Summary Statistics by Subject
+
+```{r population-summary}
+# Calculate PK parameters for all subjects
+pk_summary <- example_data %>%
+  filter(EVID == 0, !is.na(DV)) %>%
+  group_by(ID) %>%
+  summarise(
+    n_obs = n(),
+    Cmax = max(DV),
+    Tmax = TIME[which.max(DV)],
+    AUC_last = sum(diff(TIME) * (head(DV, -1) + tail(DV, -1)) / 2),
+    .groups = "drop"
+  )
+
+print(pk_summary)
+```
+
+### Population Statistics
+
+```{r pop-stats}
+# Calculate mean, SD, CV% for key parameters
+pop_stats <- pk_summary %>%
+  summarise(
+    Parameter = c("Cmax (ng/mL)", "AUC (ng·h/mL)"),
+    Mean = c(mean(Cmax), mean(AUC_last)),
+    SD = c(sd(Cmax), sd(AUC_last)),
+    CV_percent = c(sd(Cmax)/mean(Cmax)*100, sd(AUC_last)/mean(AUC_last)*100),
+    Min = c(min(Cmax), min(AUC_last)),
+    Max = c(max(Cmax), max(AUC_last))
+  )
+
+knitr::kable(pop_stats, digits = 1, 
+             caption = "Population PK Parameter Summary")
+```
+
+## Visualization
+
+### Concentration-Time Profiles
+
+```{r conc-time-plot, fig.cap="Individual concentration-time profiles"}
+# Plot individual profiles
+ggplot(example_data %>% filter(EVID == 0), 
+       aes(x = TIME, y = DV, color = factor(ID), group = ID)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_y_log10() +
+  labs(
+    title = "Plasma Concentration-Time Profiles",
+    subtitle = "100 mg IV Bolus - Log Scale",
+    x = "Time (hours)",
+    y = "Concentration (ng/mL)",
+    color = "Subject ID"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+### Distribution of PK Parameters
+
+```{r pk-distribution, fig.cap="Distribution of Cmax and AUC across subjects"}
+# Boxplots of key parameters
+library(tidyr)
+
+pk_summary %>%
+  select(ID, Cmax, AUC_last) %>%
+  pivot_longer(cols = c(Cmax, AUC_last), 
+               names_to = "Parameter", 
+               values_to = "Value") %>%
+  ggplot(aes(x = Parameter, y = Value)) +
+  geom_boxplot(fill = "lightblue", alpha = 0.7) +
+  geom_jitter(width = 0.1, size = 2, alpha = 0.6) +
+  facet_wrap(~ Parameter, scales = "free") +
+  labs(
+    title = "Distribution of PK Parameters",
+    subtitle = "n=5 subjects",
+    y = "Parameter Value"
+  ) +
+  theme_minimal()
+```
+
+## Clinical Interpretation
+
+### Dose Proportionality
+
+For linear PK, we expect:
+
+- **Cmax** proportional to dose
+- **AUC** proportional to dose
+- **t½** independent of dose
+
+With mean AUC = `r round(mean(pk_summary$AUC_last), 0)` ng·h/mL for 100 mg dose:
+
+- Predicted AUC for 200 mg = `r round(mean(pk_summary$AUC_last) * 2, 0)` ng·h/mL
+- Predicted AUC for 50 mg = `r round(mean(pk_summary$AUC_last) * 0.5, 0)` ng·h/mL
+
+### Inter-Subject Variability
+
+```{r variability}
+cv_cmax <- sd(pk_summary$Cmax) / mean(pk_summary$Cmax) * 100
+cv_auc <- sd(pk_summary$AUC_last) / mean(pk_summary$AUC_last) * 100
+```
+
+- **Cmax CV% = `r round(cv_cmax, 1)`%**: Moderate variability in peak exposure
+- **AUC CV% = `r round(cv_auc, 1)`%**: `r ifelse(cv_auc < 30, "Low", "Moderate")` variability in total exposure
+
+CV% < 30% is generally considered acceptable for PK parameters.
+
+## NONMEM Integration
+
+These R-calculated parameters can be compared against NONMEM population PK model outputs:
+
+```r
+# After NONMEM run
+nonmem_output <- NMdata::NMscanData("run001")
+
+# Compare observed vs. predicted
+compare_pk <- merge(
+  pk_summary,
+  nonmem_output %>% 
+    group_by(ID) %>%
+    summarise(PRED_Cmax = max(PRED)),
+  by = "ID"
+)
+```
+
+## Best Practices
+
+### Data Quality Checks
+
+Before calculating PK parameters:
+
+1. ✅ Verify time points are chronological
+2. ✅ Check for missing or BLQ (below limit of quantification) values
+3. ✅ Confirm dose administration records exist
+4. ✅ Validate concentration units
+5. ✅ Inspect for outliers
+
+### Regulatory Considerations
+
+- **FDA Guidance**: PK parameter calculations should be prospectively defined in SAP
+- **AUC Method**: Trapezoidal rule is standard (linear or log-linear)
+- **t½ Calculation**: Use ≥3 terminal points with r² > 0.80
+- **Reporting**: Include geometric mean and CV% for exposure parameters
+
+## Summary
+
+This vignette demonstrated:
+
+- ✅ Calculation of key PK parameters (Cmax, Tmax, AUC, t½)
+- ✅ Population-level PK summaries
+- ✅ Visualization of concentration-time data
+- ✅ Clinical interpretation of PK results
+- ✅ Integration with NONMEM workflows
+
+## Further Reading
+
+- FDA Guidance: Population Pharmacokinetics (2019)
+- Gabrielsson & Weiner: Pharmacokinetic and Pharmacodynamic Data Analysis
+- NONMEM User Guide: Control Stream Options
+- ICH E4: Dose-Response Information to Support Drug Registration
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```
