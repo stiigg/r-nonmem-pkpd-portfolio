@@ -1,0 +1,72 @@
+url: https://stiigg.github.io/r-nonmem-pkpd-portfolio/
+
+template:
+  bootstrap: 5
+  bootswatch: cosmo
+  theme: arrow-light
+  
+author:
+  Christian Baghai:
+    href: https://www.linkedin.com/in/christian-baghai-236399a5/
+
+home:
+  title: NONMEM PK/PD Dataset Preparation with R
+  description: >
+    R programming portfolio demonstrating expertise in pharmacometrics,
+    NONMEM dataset preparation, CDISC SDTM/ADAM standards, and PK/PD analysis.
+    Designed for Senior Statistical Programmer roles in clinical research.
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github, linkedin]
+  components:
+    linkedin:
+      icon: fab fa-linkedin
+      href: https://www.linkedin.com/in/christian-baghai-236399a5/
+      aria-label: LinkedIn
+    github:
+      icon: fab fa-github
+      href: https://github.com/stiigg/r-nonmem-pkpd-portfolio
+      aria-label: GitHub
+
+reference:
+- title: "Data Conversion"
+  desc: "Functions to convert SDTM data to NONMEM format"
+  contents:
+  - create_nonmem_dataset
+  - write_nonmem_data
+
+- title: "Data Validation"
+  desc: "Quality control and validation functions"
+  contents:
+  - validate_nonmem_data
+  - print_validation_report
+
+- title: "PK Calculations"
+  desc: "Pharmacokinetic parameter calculations"
+  contents:
+  - calculate_pk_parameters
+  - summarize_pk_by_subject
+
+articles:
+- title: "Getting Started"
+  navbar: ~
+  contents:
+  - nonmem-workflow
+  - pk-analysis
+
+- title: "Advanced Topics"
+  navbar: Advanced
+  contents:
+  - articles/advanced-topics
+
+news:
+  releases:
+  - text: "Version 0.1.0"
+    href: https://github.com/stiigg/r-nonmem-pkpd-portfolio/releases/tag/v0.1.0
+
+footer:
+  structure:
+    left: developed_by
+    right: built_with
